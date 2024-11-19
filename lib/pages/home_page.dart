@@ -26,8 +26,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay = DateTime.now(); // For multi-selection
   final Map<String, String> _shifts = {}; // Use String keys
-  List<String> _selectedDayAttendTime = [];
-  List<String> _selectedDayLeaveTime = [];
+ String _selectedDayAttendTime ='none';
+ String _selectedDayPresenceTime = 'none';
+ String _selectedDayLeaveTime = 'none';
 
   bool _canAttend = false;
   bool _canLeave = false;
@@ -123,7 +124,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     DateTime firstDayOfMonth = DateTime(_focusedDay.year, _focusedDay.month, 1);
 
     // Populate the database from the 1st of the current month onward
-    for (int i = 0; i < 365; i++) {
+    for (int i = -365; i < 365; i++) {
       DateTime currentDay = firstDayOfMonth.add(Duration(days: i));
       String shift = _getShiftForDay(currentDay);
 
@@ -191,7 +192,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           return 0;
         case 'A':
           return 1;
-        case 'Bs':
+        case 'B':
           return 2;
         case 'D':
         default:
@@ -235,13 +236,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     } else if (selectedLocation! == 'Alsabbiyah Powerplant') {
       switch (team) {
-        case 'D':
-          return 0;
         case 'C':
+          return 0;
+        case 'B':
           return 1;
         case 'A':
           return 2;
-        case 'B':
+        case 'D':
         default:
           return 3;
       }
@@ -465,20 +466,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void handleNotification(isAttend, time) async {
     if (isAttend == 0) {
-      LocalNotificationService.cancelNotification(2);
-      if (await checkNextWorkingDayStatus() == false) {
-        LocalNotificationService.showScheduledNotification(
-            tr('Time to attend!'), tr('press to open'), time, isAttend);
-      }
+      LocalNotificationService.showScheduledNotification(
+          tr('Time to attend!'), tr('press to open'), time, isAttend);
+      
     } else if (isAttend == 1) {
-      LocalNotificationService.cancelNotification(0);
       LocalNotificationService.showScheduledNotification(
           tr('Time to prove your presence!'),
           tr('press to open'),
           time,
           isAttend);
     } else if (isAttend == 2) {
-      LocalNotificationService.cancelNotification(1);
       LocalNotificationService.showScheduledNotification(
           tr('Time to go home!'), tr('press to open'), time, isAttend);
     }
@@ -527,6 +524,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (now.isBefore(shiftStart)) {
           _delayMinutes = 0;
           handleNotification(1, tzShiftEnd.subtract(Duration(hours: 10)));
+          LocalNotificationService.cancelNotification(0);
         } else {
           if (now.difference(shiftStart).inHours < 3) {
             // للبصمة الثالثة
@@ -543,7 +541,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         yearDelay += _delayMinutes;
         _monthlyDelayMinutes += _delayMinutes;
         workedDays++;
-        handleNotification(2, tzShiftEnd.subtract(Duration(minutes: 10)));
+        handleNotification(2, tzShiftEnd.subtract(Duration(minutes: 5)));
       } else if ((existingRecord.attend2 == null) &&
           (existingRecord.attend1 != null) &&
           (existingRecord.leave1 == null)) {
@@ -594,8 +592,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {});
   }
 
+  Future<tz.TZDateTime?> checkNextWorkingDay() async{
+    final DatabaseHelper dbHelper = DatabaseHelper();
+    DateTime today = DateTime.now();
+    int x =0;
+    while (x != 30){
+      DayRecord? dayRecord = await dbHelper.getDayRecord(today.year, today.month, today.day);
+      if(dayRecord==null || dayRecord.status == null || dayRecord.status == "onDuty"){
+        String? shiftType = dayRecord?.shift;
+
+        if(shiftType == "day"){
+          return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,7,0),tz.local);
+        }
+        else if(shiftType == "night"){
+          return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,19,0),tz.local);
+        }
+        else if(shiftType == "Training Course"){
+          return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,8,30),tz.local);
+        }
+      }
+      x++;
+      today = today.add(const Duration(days: 1));
+    }
+    return null;
+  }
+
   void _handleLeave() async {
     if (!_canLeave || _currentShiftDay == null) return;
+    tz.TZDateTime? nextShiftStart = await checkNextWorkingDay();
 
     DateTime now = DateTime.now();
     DateTime shiftEnd = (_currentShift == 'day')
@@ -622,6 +646,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
       if (now.isBefore(shiftEnd)) {
         _delayMinutes -= now.difference(shiftEnd).inMinutes;
+        LocalNotificationService.cancelNotification(2);
       }
       existingRecord.delayMinutes = _delayMinutes;
       if (yearRecord != null) {
@@ -630,11 +655,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         await dbHelper.updateYearRecord(
             yearRecord.year, yearRecord.delay, yearRecord.workedDays);
       }
-      if (_currentShift == 'day') {
-        // check for onduty condition
-        handleNotification(0, tzShiftEnd.add(Duration(hours: 24)));
-      } else if (_currentShift == 'night') {
-        handleNotification(0, tzShiftEnd.add(Duration(hours: 48)));
+      if(nextShiftStart != null){
+        handleNotification(0, nextShiftStart);
       }
       print('Day record is updated: delayMinutes = $_delayMinutes');
       await dbHelper.insertOrUpdateDayRecord(existingRecord);
@@ -714,47 +736,65 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // Fetch day information from the database
   Future<void> _fetchDayInfo(DateTime day) async {
     DatabaseHelper dbHelper = DatabaseHelper();
-    _selectedDayAttendTime = [];
-    _selectedDayLeaveTime = [];
+    
+    //_selectedDayAttendTime = '';
+    //_selectedDayLeaveTime = '';
 
     // Fetch the day record for the selected day, not the current shift day
     DayRecord? record =
         await dbHelper.getDayRecord(day.year, day.month, day.day);
+    int? monthDelay = await dbHelper.getMonthlyDelay(day.year,day.month);
 
     // Update the state with the selected day's status and delay
     setState(() {
       if (record != null) {
         _delayMinutes = record.delayMinutes;
+        
         if (record.attend1 != null) {
           _selectedDayStatus = 'On Duty';
-          _selectedDayAttendTime.add(_formatTime(record.attend1));
-        } else if (record.attend1 == null && record.status == 'onDuty') {
-          _selectedDayStatus = record.shift!;
-        } else {
-          _selectedDayStatus = record.status!;
+          _selectedDayAttendTime = _formatTime(record.attend1);
+        } else if (record.attend1 == null){
+          _selectedDayAttendTime='--:--';
+            if(record.status == 'onDuty') {
+              _selectedDayStatus = record.shift!;
+            }
+            else {
+              _selectedDayStatus = record.status!;
+            }
         }
         _selectedDayDelay = record.status != 'onDuty' ? 0 : record.delayMinutes;
         if (record.attend2 != null) {
-          _selectedDayAttendTime.add(_formatTime(record.attend2));
+          _selectedDayPresenceTime =_formatTime(record.attend2);
+        }
+        else{
+          _selectedDayPresenceTime='--:--';
         }
         if (record.attend3 != null) {
-          _selectedDayAttendTime.add(_formatTime(record.attend3));
+          //_selectedDayAttendTime _formatTime(record.attend3));
         }
 
         if (record.leave1 != null) {
-          _selectedDayLeaveTime.add(_formatTime(record.leave1));
+          _selectedDayLeaveTime =_formatTime(record.leave1);
+          _selectedDayStatus = 'Done';
         }
-        if (record.leave2 != null) {
-          _selectedDayLeaveTime.add(_formatTime(record.leave2));
+        else{
+          _selectedDayLeaveTime='--:--';
         }
 
         _selectedDayDelay = record.status != 'onDuty' ? 0 : record.delayMinutes;
       } else {
-        _selectedDayStatus = 'No record'; // Default message if no data found
         _selectedDayDelay = 0;
-
+        _selectedDayAttendTime='--:--';
+        _selectedDayPresenceTime='--:--';
+        _selectedDayLeaveTime='--:--';
         _selectedDayStatus = 'none'; // Default value if no record exists
         _selectedDayDelay = 0;
+      }
+      if(monthDelay!=null){
+        _monthlyDelayMinutes=monthDelay;
+      }
+      else{
+        _monthlyDelayMinutes=0;
       }
     });
 
@@ -762,11 +802,279 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _updateButtonStates();
   }
 
+  void _editDayInfo(BuildContext context)async{
+     
+   
+    showDialog(
+      context: context, 
+      builder: (BuildContext context){
+      return AlertDialog(
+        title: Text('Edit Day Info').tr(),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text('Edit Attend Time').tr(),
+              onTap: () async {
+                final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.now(),
+                );
+                if (pickedTime !=null){
+                  setState(() {
+                    _updateAttendTime(pickedTime);
+                  });
+                }
+                Navigator.of(context).pop();
+              },
+            ),
+            ListTile(
+              title: Text('Edit Presence').tr(),
+              onTap: () async {
+                final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.now(),);
+                if (pickedTime != null){
+                  setState(() {
+                    _updatePresenceTime(pickedTime);
+                  });
+                }
+                Navigator.of(context).pop();
+              },
+            ),
+            ListTile(
+              title: Text('Edit Leave Time').tr(),
+              onTap: () async {
+                  final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.now(),);
+                  if (pickedTime != null){
+                    setState(() {
+                      _updateLeaveTime(pickedTime);
+                    });
+                  }
+                  Navigator.of(context).pop();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(),
+          child: Text('Cancel').tr(),
+          ),
+        ],
+      );
+    },
+    );
+  }
+
+  void _updateAttendTime(TimeOfDay time) async{
+    DatabaseHelper dbHelper = DatabaseHelper();
+    DateTime? selected =_selectedDay;
+    // ignore: non_constant_identifier_names
+    DateTime? ShiftStart;
+    int newDelay=0;
+    int yearDelay=0;
+    
+    if (selected!=null){
+    DayRecord? existingRecord = await dbHelper.getDayRecord(selected.year, selected.month,  selected.day);
+    YearRecord? yearRecord = await dbHelper.getYearRecord(selected.year);
+    if(yearRecord!=null){
+      yearDelay=yearRecord.delay;
+    }
+    else{
+      await dbHelper.insertOrUpdateYearRecord(selected.year,0,0);
+    }
+    if (existingRecord !=null){
+      
+      DateTime stTime = DateTime(selected.year,selected.month,selected.day,time.hour,time.minute);
+      int? monthDelay= await dbHelper.getMonthlyDelay(stTime.year,stTime.month);
+      monthDelay ??= 0;
+      if(existingRecord.shift == 'day'){
+        ShiftStart = DateTime(selected.year,selected.month,selected.day,7,0);
+      }
+      else if (existingRecord.shift =='night'){
+        ShiftStart = DateTime(selected.year,selected.month,selected.day,19,0);
+      }
+       else if (existingRecord.shift =='Training Course'){
+        ShiftStart = DateTime(selected.year,selected.month,selected.day,8,30);
+      }
+      else{return;}
+       
+        
+      if(stTime.isAfter(ShiftStart)){
+        newDelay=stTime.difference(ShiftStart).inMinutes;
+      }
+      if(existingRecord.attend1==null && existingRecord.leave1==null){
+        if(yearRecord!=null ) {
+            yearRecord.workedDays++;
+          }
+      }
+      if(existingRecord.delayMinutes==0){
+          existingRecord.delayMinutes=newDelay;
+          monthDelay+=newDelay;
+          yearDelay+=newDelay;
+      }
+      else if(existingRecord.delayMinutes>0){
+        if(existingRecord.attend1!=null){
+          DateTime oldAttend1 = DateTime.parse( existingRecord.attend1!);
+          if(oldAttend1.isAfter(ShiftStart)){
+            existingRecord.delayMinutes -= oldAttend1.difference(ShiftStart).inMinutes;
+            monthDelay -= oldAttend1.difference(ShiftStart).inMinutes;
+            yearDelay -=oldAttend1.difference(ShiftStart).inMinutes;
+          }
+        }
+        existingRecord.delayMinutes+=newDelay;
+        monthDelay+=newDelay;
+        yearDelay+=newDelay;    
+      }
+      if(stTime.day == DateTime.now().day){
+        final tzshiftStart = tz.TZDateTime.from(ShiftStart,tz.local);
+        await LocalNotificationService.cancelNotification(1);
+        if(stTime.isBefore(ShiftStart)){
+          handleNotification(1,tzshiftStart.add(Duration(hours: 2)));
+        }
+        else{
+          handleNotification(1, (tz.TZDateTime.from(stTime,tz.local)).add(Duration(hours: 2)));
+        }
+      }
+      
+      existingRecord.attend1=stTime.toIso8601String();
+      if(yearRecord!=null){
+        yearRecord.delay=yearDelay;
+        await dbHelper.updateYearRecord(yearRecord.year, yearRecord.delay, yearRecord.workedDays);
+      }
+      setState(() {
+        _selectedDayAttendTime=_formatTime(existingRecord.attend1);
+        _selectedDayDelay=existingRecord.delayMinutes;
+        DateTime now = DateTime.now();
+        if(stTime.month == now.month ){
+          _monthlyDelayMinutes = monthDelay!;
+        }
+      });
+        
+      
+
+      existingRecord.attend1= stTime.toIso8601String();
+      await dbHelper.insertOrUpdateMonthRecord(stTime.year, stTime.month, monthDelay);
+      await dbHelper.insertOrUpdateDayRecord(existingRecord);
+      
+    }
+  }
+  }
+  void _updatePresenceTime(TimeOfDay time)async{
+     DatabaseHelper dbHelper = DatabaseHelper();
+    DateTime? selected =_selectedDay;
+    if (selected!=null){
+    DayRecord? existingRecord = await dbHelper.getDayRecord(selected.year, selected.month,  selected.day);
+    
+    if (existingRecord !=null){
+      DateTime stTime = DateTime(selected.year,selected.month,selected.day,time.hour,time.minute);
+      existingRecord.attend2= stTime.toIso8601String();
+      dbHelper.insertOrUpdateDayRecord(existingRecord);
+      setState(() {
+          _selectedDayPresenceTime=_formatTime(existingRecord.attend2!);
+        });
+    }
+  }
+  
+  }
+
+void _updateLeaveTime(TimeOfDay time)async{
+  DatabaseHelper dbHelper = DatabaseHelper();
+    DateTime? selected =_selectedDay;
+    // ignore: non_constant_identifier_names
+    DateTime? ShiftEnd;
+    int newDelay=0;
+    int yearDelay=0;
+    
+    if (selected!=null){
+    DayRecord? existingRecord = await dbHelper.getDayRecord(selected.year, selected.month,  selected.day);
+    YearRecord? yearRecord = await dbHelper.getYearRecord(selected.year);
+    if(yearRecord!=null){
+      yearDelay=yearRecord.delay;
+    }
+    else{
+      await dbHelper.insertOrUpdateYearRecord(selected.year,0,0);
+    }
+    if (existingRecord !=null){
+      
+      DateTime stTime = DateTime(selected.year,selected.month,selected.day,time.hour,time.minute);
+      int? monthDelay= await dbHelper.getMonthlyDelay(stTime.year,stTime.month);
+      print("selected shift is: ${existingRecord.shift}");
+      monthDelay ??= 0;
+      if(existingRecord.shift == 'day'){
+        ShiftEnd = DateTime(selected.year,selected.month,selected.day,19,0);
+      }
+      else if (existingRecord.shift =='night'){
+        ShiftEnd = DateTime(selected.year,selected.month,selected.day+1,7,0);
+        stTime = stTime.add(Duration(days: 1));
+      }
+       else if (existingRecord.shift =='Training Course'){
+        ShiftEnd = DateTime(selected.year,selected.month,selected.day,12,30);
+      }
+
+       
+      if(ShiftEnd!=null){
+        if(stTime.isBefore(ShiftEnd)){
+          newDelay=ShiftEnd.difference(stTime).inMinutes;
+        }
+        if(existingRecord.attend1==null && existingRecord.leave1==null){
+          if(yearRecord!=null ) {
+            yearRecord.workedDays++;
+          }
+        }
+        if(existingRecord.delayMinutes==0){
+            existingRecord.delayMinutes=newDelay;
+            monthDelay+=newDelay;
+            yearDelay+=newDelay;
+        }
+        else if(existingRecord.delayMinutes>0){
+          if(existingRecord.leave1!=null){
+            DateTime oldLeave1 = DateTime.parse( existingRecord.leave1!);
+            if(oldLeave1.isBefore(ShiftEnd)){
+              existingRecord.delayMinutes-=ShiftEnd.difference(oldLeave1).inMinutes;
+              monthDelay-=ShiftEnd.difference(oldLeave1).inMinutes;
+              yearDelay-=ShiftEnd.difference(oldLeave1).inMinutes;
+            }
+          }
+            existingRecord.delayMinutes+=newDelay;
+            monthDelay+=newDelay;
+            yearDelay+=newDelay;
+          
+        }
+      }
+      
+      existingRecord.leave1=stTime.toIso8601String();
+      if(yearRecord!=null){
+        yearRecord.delay=yearDelay;
+        await dbHelper.updateYearRecord(yearRecord.year, yearRecord.delay, yearRecord.workedDays);
+      }
+      setState(() {
+        _selectedDayLeaveTime=_formatTime(existingRecord.leave1);
+        _selectedDayDelay=existingRecord.delayMinutes;
+        DateTime now = DateTime.now();
+        if(stTime.month == now.month ){
+          _monthlyDelayMinutes = monthDelay!;
+        }
+      });
+        
+      
+
+      
+      await dbHelper.insertOrUpdateMonthRecord(stTime.year, stTime.month, monthDelay);
+      await dbHelper.insertOrUpdateDayRecord(existingRecord);
+      
+    }
+  }
+}
+  void reloadPage(){
+    Navigator.pop(context);
+    Navigator.push(context, MaterialPageRoute(builder: (context) => HomePage()),);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color backgroundColor = theme.scaffoldBackgroundColor;
     return Stack(
       children: [
         Scaffold(
+          backgroundColor: backgroundColor,
           appBar: AppBar(
             title: Text(
               'Welcome, Team $selectedTeam!'.tr(),
@@ -849,6 +1157,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             color: Color(0xFF3B5BDB),
                                           ),
                                         ),
+                                        const SizedBox(height: 12),
+                                        ElevatedButton(onPressed: (){_editDayInfo(context);},
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF3B5BDB),
+                                        ),
+                                        child: const Text('Edit',
+                                        style: TextStyle(color: Colors.white),).tr()
+                                        ),
                                       ],
                                     ),
                                     // Right: Attendance and Leave Times
@@ -858,7 +1174,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       children: [
                                         if (_selectedDayAttendTime.isNotEmpty)
                                           Text(
-                                            '${'Attend'.tr()}: ${_selectedDayAttendTime.join(", ")}',
+                                            '${'Attend'.tr()}: $_selectedDayAttendTime',
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        const SizedBox(height: 8),
+                                        if (_selectedDayAttendTime.isNotEmpty)
+                                          Text(
+                                            '${'Presence'.tr()}: $_selectedDayPresenceTime',
                                             style: const TextStyle(
                                               fontSize: 16,
                                               fontWeight: FontWeight.bold,
@@ -867,7 +1192,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         const SizedBox(height: 8),
                                         if (_selectedDayLeaveTime.isNotEmpty)
                                           Text(
-                                            '${'Leave'.tr()}: ${_selectedDayLeaveTime.join(", ")}',
+                                            '${'Leave'.tr()}: $_selectedDayLeaveTime',
                                             style: const TextStyle(
                                               fontSize: 16,
                                               fontWeight: FontWeight.bold,
@@ -981,6 +1306,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final shift = _shifts[formattedDate] ?? 'off';
     final color = _getShiftColor(shift);
     final dayRecord = _dayRecordsCache[formattedDate];
+    final bool isToday = date.year == DateTime.now().year && date.month == DateTime.now().month && date.day == DateTime.now().day;
 
     Color cellColor;
     if (dayRecord?.status == 'Training Course') {
@@ -991,17 +1317,53 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       cellColor = color;
     }
 
+    if(isToday){ // Selected day == today
+     return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+      width: 40.0,
+      height: 40.0,
+      alignment: Alignment(0,-0.7),
+      decoration: BoxDecoration(
+        color: cellColor,
+        borderRadius:
+            BorderRadius.circular(100.0), 
+            // Full circular radius for today
+      ),
+      child: Text(
+        date.day.toString(),
+        style: const TextStyle(
+            color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+      ),
+    ),
+    Positioned(
+      bottom: 10,
+      child: Container(
+        color: Colors.transparent,
+        alignment: Alignment.center,
+        child: Text(
+          'Today',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      )
+    ),
+      ],
+    ); 
+    }
+
     return Container(
       margin: const EdgeInsets.all(3.0),
       alignment: Alignment.center,
-      width: 40.0,
-      height: 40.0,
+      width: 38.0,
+      height: 38.0,
       decoration: BoxDecoration(
         color: cellColor,
-        border: Border.all(
-          color: Colors.black38,
-          width: 2.5,
-        ),
+        
         borderRadius:
             BorderRadius.circular(100.0), // Unique radius for selected day
       ),
@@ -1027,25 +1389,49 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       cellColor = color.withAlpha(180);
     }
 
-    return Container(
-      margin: const EdgeInsets.all(3.0),
+    return Stack(
       alignment: Alignment.center,
-      width: 35.0,
-      height: 35.0,
+      children: [
+        Container(
+      width: 40.0,
+      height: 40.0,
+      alignment: Alignment(0,-0.7),
       decoration: BoxDecoration(
         color: cellColor,
-        // border: Border.all(
-        //   color: Color.fromARGB(211, 218, 33, 0),
-        //   width: 1.5,
-        // ),
         borderRadius:
-            BorderRadius.circular(100.0), // Full circular radius for today
+            BorderRadius.circular(100.0), 
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black38.withOpacity(0.3),
+                blurRadius: 6.0,
+                offset: Offset(0, 3),
+
+              ),
+              ],
+            // Full circular radius for today
       ),
       child: Text(
         date.day.toString(),
         style: const TextStyle(
-            color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+            color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
       ),
+    ),
+    Positioned(
+      bottom: 10,
+      child: Container(
+        color: Colors.transparent,
+        alignment: Alignment.center,
+        child: Text(
+          'Today',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      )
+    ),
+      ],
     );
   }
 
@@ -1078,11 +1464,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 color: Colors.black45, width: 2.5) // Highlight selected day
             : null,
         borderRadius: BorderRadius.circular(100.0),
+        boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 6.0,
+                offset: Offset(0, 2)
+
+              ),
+              ],
       ),
       child: Text(
         date.day.toString(),
         style:
-            const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            const TextStyle(color: Colors.white,fontSize: 18, fontWeight: FontWeight.bold),
       ),
     );
   }

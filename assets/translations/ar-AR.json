@@ -108,5 +108,13 @@
   "Training Course": "دورة تدريبية",
   "OFF (before/after training)": "راحة (قبل/بعد الدورة)",
   "Vacation Type": "نوع الإجازة",
-  "Welcome, Team null!": "يرجى الانتظار..."
+  "Welcome, Team null!": "يرجى الانتظار...",
+  "Presence":"التواجد",
+  "Edit":"تعديل",
+  "Done":"تم",
+  "Edit Day Info":"تعديل أوقات اليوم",
+  "Edit Attend Time":"تعديل وقت الحضور",
+  "Edit Presence":"تعديل التواجد",
+  "Edit Leave Time":"تعديل وقت الانصراف",
+  "Cancel":"إلغاء"
 }

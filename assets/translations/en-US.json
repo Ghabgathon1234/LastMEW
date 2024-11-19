@@ -108,5 +108,13 @@
   "Training Course": "Training Course",
   "OFF (before/after training)": "OFF (before/after training)",
   "Vacation Type": "Vacation Type",
-  "Welcome, Team null!": "Please wait..."
+  "Welcome, Team null!": "Please wait...",
+  "Presence":"Presence",
+  "Edit":"Edit",
+  "Done":"Done",
+  "Edit Day Info":"Edit Day Info",
+  "Edit Attend Time":"Edit Attend Time",
+  "Edit Presence":"Edit Presence",
+  "Edit Leave Time":"Edit Leave Time",
+  "Cancel":"Cancel"
 }
