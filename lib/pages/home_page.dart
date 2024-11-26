@@ -1,5 +1,7 @@
 // lib/pages/home_page.dart
 
+import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,16 +22,16 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _delayMinutes = 0; // Track the total delay for the day
   int _monthlyDelayMinutes = 0; // Initialize the variable to hold monthly delay
-  bool _isVacation = false;
   String? selectedTeam;
+  String? preSelectedTeam;
   String? selectedLocation;
+  String? preSelectedLocation;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay = DateTime.now(); // For multi-selection
   final Map<String, String> _shifts = {}; // Use String keys
  String _selectedDayAttendTime ='none';
  String _selectedDayPresenceTime = 'none';
  String _selectedDayLeaveTime = 'none';
-
   bool _canAttend = false;
   bool _canLeave = false;
   bool _isLoading = false;
@@ -110,7 +112,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     setState(() {
       selectedTeam = prefs.getString('team') ?? 'D';
+      preSelectedTeam = prefs.getString('preteam') ?? 'D';
       selectedLocation = prefs.getString('location') ?? 'Alzour Powerplant';
+      preSelectedLocation = prefs.getString('prelocation') ?? 'Alzour Powerplant';
     });
 
     if (selectedTeam != null) {
@@ -121,8 +125,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   //Initialize the database
   Future<void> _initializeDatabase() async {
     DatabaseHelper dbHelper = DatabaseHelper();
+    SharedPreferences prefs = await SharedPreferences.getInstance();
     DateTime firstDayOfMonth = DateTime(_focusedDay.year, _focusedDay.month, 1);
+    DateTime today = DateTime(_focusedDay.year,_focusedDay.month,_focusedDay.day);
 
+    YearRecord? yearRecord = await dbHelper.getYearRecord(today.year);
+    if(yearRecord==null){
+      await dbHelper.insertOrUpdateYearRecord(today.year, 0, 0);
+    }
+    MonthRecord? monthRecord = await dbHelper.getMonthRecord(today.year, today.month);
+    if(monthRecord==null){
+      await dbHelper.insertOrUpdateMonthRecord(today.year, today.month, 0);
+    }
+
+    if(preSelectedTeam!=null && selectedTeam!=null
+      && preSelectedLocation!=null && selectedLocation!=null){
+            if((preSelectedTeam!=selectedTeam)||(preSelectedLocation!=selectedLocation)){
+              for (int i = 0; i < 365; i++) {
+                DateTime currentDay = today.add(Duration(days: i));
+                String shift = _getShiftForDay(currentDay);
+
+                // Check if the record already exists in the database
+                DayRecord? existingRecord = await dbHelper.getDayRecord(
+                    currentDay.year, currentDay.month, currentDay.day);
+                if (existingRecord != null) {
+                  // If the record doesn't exist, create a new one
+                  DayRecord newRecord = DayRecord(
+                    year: currentDay.year,
+                    month: currentDay.month,
+                    day: currentDay.day,
+                    status: 'onDuty',
+                    shift: shift,
+                    attend1: null,
+                    attend2: null,
+                    attend3: null,
+                    leave1: null,
+                    leave2: null,
+                    delayMinutes: 0,
+                  );
+                  await dbHelper.insertOrUpdateDayRecord(newRecord);
+                }
+              }
+              setState(() {
+                preSelectedTeam=selectedTeam;
+                preSelectedLocation=selectedLocation;
+              });
+              await prefs.setString('preteam', preSelectedTeam!);
+              await prefs.setString('prelocation', preSelectedLocation!);
+            }
+          }
     // Populate the database from the 1st of the current month onward
     for (int i = -365; i < 365; i++) {
       DateTime currentDay = firstDayOfMonth.add(Duration(days: i));
@@ -152,7 +203,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   // Generate shift cycle based on the team
-  void _generateShifts() {
+  void _generateShifts() async{
     _shifts.clear();
     List<String> shiftPattern = ['day', 'night', 'off', 'off']; // Shift pattern
     DateTime baseDate = DateTime(2023, 1, 1); // Fixed base date for consistency
@@ -171,6 +222,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (shiftIndex < 0) shiftIndex += shiftPattern.length;
       _shifts[formattedDate] = shiftPattern[shiftIndex];
     }
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String shiftsJson = jsonEncode(_shifts);
+    await prefs.setString('shifts', shiftsJson);
   }
 
   int _getTeamOffset(String team) {
@@ -188,61 +242,61 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     } else if (selectedLocation! == 'Shuaibah Powerplant') {
       switch (team) {
-        case 'C':
+        case 'C': //D
           return 0;
-        case 'A':
+        case 'A': //C
           return 1;
-        case 'B':
+        case 'B'://A
           return 2;
-        case 'D':
+        case 'D': //B
         default:
           return 3;
       }
     } else if (selectedLocation! == 'Alshuwaikh Powerplant') {
       switch (team) {
-        case 'D':
+        case 'C': //D
           return 0;
-        case 'C':
+        case 'B': //C
           return 1;
-        case 'A':
+        case 'D': //A
           return 2;
-        case 'B':
+        case 'A': //B
         default:
           return 3;
       }
     } else if (selectedLocation! == 'West Doha Powerplant') {
       switch (team) {
-        case 'D':
+        case 'C': //D
           return 0;
-        case 'C':
+        case 'A': //C
           return 1;
-        case 'A':
+        case 'D'://A
           return 2;
-        case 'B':
+        case 'B': //B
         default:
           return 3;
       }
     } else if (selectedLocation! == 'East Doha Powerplant') {
       switch (team) {
-        case 'D':
+        case 'C': //D
           return 0;
-        case 'C':
+        case 'B'://C
           return 1;
-        case 'A':
+        case 'D'://A
           return 2;
-        case 'B':
+        case 'A'://B
         default:
           return 3;
       }
     } else if (selectedLocation! == 'Alsabbiyah Powerplant') {
       switch (team) {
-        case 'C':
+        case 'C'://D
           return 0;
-        case 'B':
+        case 'B'://C
           return 1;
-        case 'A':
+        case 'A'://A
           return 2;
-        case 'D':
+        case 'D'://B
         default:
           return 3;
       }
@@ -294,7 +348,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if ((todayShift == 'night' && now.hour >= 17) ||
         (yesterdayShift == 'night' && now.hour < 9)) {
       // Night shift: 5:00 PM to 9:00 AM next day
-      _currentShiftDay = now.hour < 7 ? yesterday : today;
+      _currentShiftDay = now.hour < 9 ? yesterday : today;
       _currentShift = 'night';
     } else {
       _currentShiftDay = null;
@@ -309,7 +363,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       setState(() {
         _canAttend = false;
         _canLeave = false;
-        _isVacation = false;
       });
       print('Shift is off or no current shift day found.');
       return;
@@ -340,7 +393,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       setState(() {
         _canAttend = false;
         _canLeave = false;
-        _isVacation = false;
       });
       print('No valid shift found.');
       return;
@@ -466,8 +518,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void handleNotification(isAttend, time) async {
     if (isAttend == 0) {
-      LocalNotificationService.showScheduledNotification(
-          tr('Time to attend!'), tr('press to open'), time, isAttend);
+      //LocalNotificationService.showScheduledNotification(
+          //tr('Time to attend!'), tr('press to open'), time, isAttend);
       
     } else if (isAttend == 1) {
       LocalNotificationService.showScheduledNotification(
@@ -477,7 +529,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           isAttend);
     } else if (isAttend == 2) {
       LocalNotificationService.showScheduledNotification(
-          tr('Time to go home!'), tr('press to open'), time, isAttend);
+         tr('Time to go home!'), tr('press to open'), time, isAttend);
     }
   }
 
@@ -598,17 +650,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     int x =0;
     while (x != 30){
       DayRecord? dayRecord = await dbHelper.getDayRecord(today.year, today.month, today.day);
-      if(dayRecord==null || dayRecord.status == null || dayRecord.status == "onDuty"){
-        String? shiftType = dayRecord?.shift;
+      if(dayRecord!=null){ 
+        if(dayRecord.status == 'Training Course'|| dayRecord.status == "onDuty"){
+          String? shiftType = dayRecord.shift;
 
-        if(shiftType == "day"){
-          return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,7,0),tz.local);
-        }
-        else if(shiftType == "night"){
-          return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,19,0),tz.local);
-        }
-        else if(shiftType == "Training Course"){
-          return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,8,30),tz.local);
+          if(shiftType == "day"){
+            return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,7,0),tz.local);
+          }
+          else if(shiftType == "night"){
+            return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,19,0),tz.local);
+          }
+          else if(shiftType == "Training Course"){
+            return tz.TZDateTime.from(DateTime(today.year,today.month,today.day,8,30),tz.local);
+          }
         }
       }
       x++;
@@ -815,8 +869,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           children: [
             ListTile(
               title: Text('Edit Attend Time').tr(),
+              //textColor: Theme.of(context).textTheme?.bodyMedium,
               onTap: () async {
-                final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.now(),
+                final TimeOfDay? pickedTime = await showTimePicker(
+                  context: context, 
+                  initialTime: TimeOfDay.now(),
+                  barrierColor: Theme.of(context).cardColor,
+                  builder: (BuildContext context,Widget? child){
+                    
+                    return Theme(data: Theme.of(context).copyWith(
+                      timePickerTheme: TimePickerThemeData(
+                        dayPeriodColor: Color(0xFF007AFF),
+                        backgroundColor: Theme.of(context).canvasColor,
+                        dialBackgroundColor: Theme.of(context).canvasColor
+                      ),
+                      colorScheme: ColorScheme.light(
+                        primary: Color(0xFF007AFF),
+                        onPrimary: Theme.of(context).cardColor,
+                        onSurface: Color(0xFF007AFF), 
+                      ),
+                      
+                      
+                      textButtonTheme: TextButtonThemeData(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Color(0xFF007AFF),
+                        ),
+                      ),
+                     
+                    ), child: child!);
+                  }
                 );
                 if (pickedTime !=null){
                   setState(() {
@@ -829,7 +910,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ListTile(
               title: Text('Edit Presence').tr(),
               onTap: () async {
-                final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.now(),);
+                final TimeOfDay? pickedTime = await showTimePicker(
+                  context: context, 
+                  initialTime: TimeOfDay.now(),
+                  barrierColor: Theme.of(context).cardColor,
+                  builder: (BuildContext context,Widget? child){
+                    
+                    return Theme(data: Theme.of(context).copyWith(
+                      timePickerTheme: TimePickerThemeData(
+                        dayPeriodColor: Color(0xFF007AFF),
+                        backgroundColor: Theme.of(context).canvasColor,
+                        dialBackgroundColor: Theme.of(context).canvasColor
+                      ),
+                      colorScheme: ColorScheme.light(
+                        primary: Color(0xFF007AFF),
+                        onPrimary: Theme.of(context).cardColor,
+                        onSurface: Color(0xFF007AFF), 
+                      ),
+                      
+                      
+                      textButtonTheme: TextButtonThemeData(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Color(0xFF007AFF),
+                        ),
+                      ),
+                     
+                    ), child: child!);
+                  }
+                );
                 if (pickedTime != null){
                   setState(() {
                     _updatePresenceTime(pickedTime);
@@ -841,7 +949,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ListTile(
               title: Text('Edit Leave Time').tr(),
               onTap: () async {
-                  final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.now(),);
+                final TimeOfDay? pickedTime = await showTimePicker(
+                  context: context, 
+                  initialTime: TimeOfDay.now(),
+                  barrierColor: Theme.of(context).cardColor,
+                  builder: (BuildContext context,Widget? child){
+                    
+                    return Theme(data: Theme.of(context).copyWith(
+                      timePickerTheme: TimePickerThemeData(
+                        dayPeriodColor: Color(0xFF007AFF),
+                        backgroundColor: Theme.of(context).canvasColor,
+                        dialBackgroundColor: Theme.of(context).canvasColor
+                      ),
+                      colorScheme: ColorScheme.light(
+                        primary: Color(0xFF007AFF),
+                        onPrimary: Theme.of(context).cardColor,
+                        onSurface: Color(0xFF007AFF), 
+                      ),
+                      
+                    
+                      textButtonTheme: TextButtonThemeData(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Color(0xFF007AFF),
+                        ),
+                      ),
+                     
+                    ), child: child!);
+                  }
+                );
                   if (pickedTime != null){
                     setState(() {
                       _updateLeaveTime(pickedTime);
@@ -850,16 +985,76 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   Navigator.of(context).pop();
               },
             ),
+            ListTile(
+              title: Text('Delete Day Times').tr(),
+              textColor: Colors.red,
+              onTap: () async {
+                setState(() {
+                  _deleteDayInfo();
+                });
+                  Navigator.of(context).pop();
+              },
+            ),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(),
+          style: TextButton.styleFrom(
+            foregroundColor: Color(0xFF007AFF),
+          ),
           child: Text('Cancel').tr(),
+          
           ),
         ],
       );
     },
     );
+  }
+
+  void _deleteDayInfo() async{
+    DatabaseHelper dbHelper = DatabaseHelper();
+    DateTime? selected =_selectedDay;
+    if(selected!=null){
+      DayRecord? existingRecord = await dbHelper.getDayRecord(selected.year, selected.month,  selected.day);
+      
+      if(existingRecord!=null){
+        int? monthDelay= await dbHelper.getMonthlyDelay(selected.year,selected.month);
+        YearRecord? yearRecord = await dbHelper.getYearRecord(selected.year);
+        if(monthDelay!=null&&yearRecord!=null){
+          if(existingRecord.delayMinutes>0){
+            monthDelay=(monthDelay-existingRecord.delayMinutes);
+            yearRecord.delay=yearRecord.delay-existingRecord.delayMinutes; 
+          }
+          if(existingRecord.attend1!=null){
+            --yearRecord.workedDays;
+          }
+    
+        
+      DayRecord updatedRecord = DayRecord(
+          year: selected.year,
+          month: selected.month,
+          day: selected.day,
+          status: 'onDuty',
+          shift: existingRecord.shift,
+          attend1: null,
+          attend2: null,
+          attend3: null,
+          leave1:  null,
+          leave2:  null,
+          delayMinutes: 0,
+        );
+        await dbHelper.insertOrUpdateDayRecord(updatedRecord);
+        await dbHelper.updateYearRecord(selected.year, yearRecord.delay, yearRecord.workedDays);
+        await dbHelper.updateMonthRecord(selected.year, selected.month, monthDelay);
+      }
+      }
+      tz.TZDateTime? nextShiftStart = await checkNextWorkingDay();
+      handleNotification(0, nextShiftStart);
+    
+    setState(() {
+       _fetchDayInfo(selected);
+    });
+    }
   }
 
   void _updateAttendTime(TimeOfDay time) async{
@@ -873,17 +1068,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (selected!=null){
     DayRecord? existingRecord = await dbHelper.getDayRecord(selected.year, selected.month,  selected.day);
     YearRecord? yearRecord = await dbHelper.getYearRecord(selected.year);
-    if(yearRecord!=null){
-      yearDelay=yearRecord.delay;
-    }
-    else{
-      await dbHelper.insertOrUpdateYearRecord(selected.year,0,0);
-    }
+    DateTime stTime = DateTime(selected.year,selected.month,selected.day,time.hour,time.minute);
+    int? monthDelay= await dbHelper.getMonthlyDelay(stTime.year,stTime.month) ??0;
+
     if (existingRecord !=null){
-      
-      DateTime stTime = DateTime(selected.year,selected.month,selected.day,time.hour,time.minute);
-      int? monthDelay= await dbHelper.getMonthlyDelay(stTime.year,stTime.month);
-      monthDelay ??= 0;
       if(existingRecord.shift == 'day'){
         ShiftStart = DateTime(selected.year,selected.month,selected.day,7,0);
       }
@@ -899,7 +1087,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if(stTime.isAfter(ShiftStart)){
         newDelay=stTime.difference(ShiftStart).inMinutes;
       }
-      if(existingRecord.attend1==null && existingRecord.leave1==null){
+      if(yearRecord!=null){
+      yearDelay=yearRecord.delay;
+    }
+
+      if(existingRecord.attend1==null){
         if(yearRecord!=null ) {
             yearRecord.workedDays++;
           }
@@ -976,13 +1168,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
 void _updateLeaveTime(TimeOfDay time)async{
   DatabaseHelper dbHelper = DatabaseHelper();
+    DateTime now =DateTime.now();
     DateTime? selected =_selectedDay;
     // ignore: non_constant_identifier_names
     DateTime? ShiftEnd;
     int newDelay=0;
     int yearDelay=0;
+
     
     if (selected!=null){
+      if(now.day==selected.day){
+        tz.TZDateTime? nextShiftStart = await checkNextWorkingDay();
+        handleNotification(0, nextShiftStart);
+      }
+    
     DayRecord? existingRecord = await dbHelper.getDayRecord(selected.year, selected.month,  selected.day);
     YearRecord? yearRecord = await dbHelper.getYearRecord(selected.year);
     if(yearRecord!=null){
@@ -1013,11 +1212,7 @@ void _updateLeaveTime(TimeOfDay time)async{
         if(stTime.isBefore(ShiftEnd)){
           newDelay=ShiftEnd.difference(stTime).inMinutes;
         }
-        if(existingRecord.attend1==null && existingRecord.leave1==null){
-          if(yearRecord!=null ) {
-            yearRecord.workedDays++;
-          }
-        }
+        
         if(existingRecord.delayMinutes==0){
             existingRecord.delayMinutes=newDelay;
             monthDelay+=newDelay;
@@ -1078,9 +1273,10 @@ void _updateLeaveTime(TimeOfDay time)async{
           appBar: AppBar(
             title: Text(
               'Welcome, Team $selectedTeam!'.tr(),
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
             ),
-            backgroundColor: const Color(0xFF3B5BDB),
+            backgroundColor: Theme.of(context).primaryColor,
+            //elevation: 4.0,
           ),
           body: selectedTeam == null
               ? const Center(child: CircularProgressIndicator())
@@ -1088,10 +1284,18 @@ void _updateLeaveTime(TimeOfDay time)async{
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      // Calendar without Card
+                      Directionality(textDirection: ui.TextDirection.ltr, child: 
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        
+                      // Calendar without Card
+                      
                         child: TableCalendar(
+                          headerStyle: HeaderStyle(
+                            formatButtonVisible: false,
+                            leftChevronIcon: Icon(Icons.chevron_left,color: Color(0xFF007AFF),),
+                            rightChevronIcon: Icon(Icons.chevron_right,color: Color(0xFF007AFF),)
+                          ),
                           firstDay: DateTime.utc(2020, 1, 1),
                           lastDay: DateTime.utc(2030, 12, 31),
                           focusedDay: _focusedDay,
@@ -1117,12 +1321,16 @@ void _updateLeaveTime(TimeOfDay time)async{
                           },
                         ),
                       ),
+                      ),
+                    
                       const SizedBox(height: 10),
 
                       // Selected Day's Information Card
                       if (_selectedDay != null) ...[
                         Card(
                           elevation: 3,
+                          color: Theme.of(context).cardColor,
+                          shadowColor: Theme.of(context).shadowColor,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -1145,8 +1353,8 @@ void _updateLeaveTime(TimeOfDay time)async{
                                           style: const TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
-                                            color: Color(0xFF3B5BDB),
-                                          ),
+                                            
+                                            ),
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
@@ -1154,13 +1362,13 @@ void _updateLeaveTime(TimeOfDay time)async{
                                           style: const TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
-                                            color: Color(0xFF3B5BDB),
+                                            
                                           ),
                                         ),
                                         const SizedBox(height: 12),
                                         ElevatedButton(onPressed: (){_editDayInfo(context);},
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF3B5BDB),
+                                          backgroundColor: Theme.of(context).hintColor,
                                         ),
                                         child: const Text('Edit',
                                         style: TextStyle(color: Colors.white),).tr()
@@ -1180,7 +1388,7 @@ void _updateLeaveTime(TimeOfDay time)async{
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 12),
                                         if (_selectedDayAttendTime.isNotEmpty)
                                           Text(
                                             '${'Presence'.tr()}: $_selectedDayPresenceTime',
@@ -1189,7 +1397,7 @@ void _updateLeaveTime(TimeOfDay time)async{
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 12),
                                         if (_selectedDayLeaveTime.isNotEmpty)
                                           Text(
                                             '${'Leave'.tr()}: $_selectedDayLeaveTime',
@@ -1209,34 +1417,13 @@ void _updateLeaveTime(TimeOfDay time)async{
                         const SizedBox(height: 10),
                       ],
 
-                      // Vacation Label Card
-                      if (_isVacation) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12.0, horizontal: 16.0),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Center(
-                            child: Text(
-                              'You are on vacation',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color.fromARGB(211, 218, 33, 0),
-                              ),
-                            ).tr(),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-
                       // Attend and Leave Buttons with Shift Gauge Card
                       Card(
                         elevation: 3,
+                        color: Theme.of(context).cardColor,
+                        shadowColor: Theme.of(context).shadowColor,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(10),                        
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
@@ -1250,7 +1437,7 @@ void _updateLeaveTime(TimeOfDay time)async{
                                       style: ElevatedButton.styleFrom(
                                         minimumSize: const Size(150, 50),
                                         backgroundColor:
-                                            const Color(0xFF3B5BDB),
+                                            Theme.of(context).hintColor
                                       ),
                                       onPressed:
                                           _canAttend ? _handleAttend : null,
@@ -1264,7 +1451,7 @@ void _updateLeaveTime(TimeOfDay time)async{
                                       style: ElevatedButton.styleFrom(
                                         minimumSize: const Size(150, 50),
                                         backgroundColor:
-                                            const Color(0xFF3B5BDB),
+                                            Theme.of(context).hintColor,
                                       ),
                                       onPressed:
                                           _canLeave ? _handleLeave : null,
@@ -1322,32 +1509,44 @@ void _updateLeaveTime(TimeOfDay time)async{
       alignment: Alignment.center,
       children: [
         Container(
-      width: 40.0,
-      height: 40.0,
-      alignment: Alignment(0,-0.7),
+      width: 45.0,
+      height: 45.0,
+      alignment: Alignment(0,-0.75),
       decoration: BoxDecoration(
         color: cellColor,
         borderRadius:
             BorderRadius.circular(100.0), 
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(context).shadowColor.withOpacity(0.5),
+                blurRadius: 6.0,
+                offset: Offset(0, 2)
+
+              ),
+              ],
             // Full circular radius for today
       ),
       child: Text(
         date.day.toString(),
         style: const TextStyle(
-            color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+            color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold,
+            shadows: [Shadow(offset: Offset(-2.0, 2.0),
+              blurRadius: 4.0,color: Colors.grey)]),
       ),
     ),
     Positioned(
-      bottom: 10,
+      bottom: 9,
       child: Container(
         color: Colors.transparent,
         alignment: Alignment.center,
         child: Text(
-          'Today',
+          'Today'.tr(),
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 8,
+            color: const ui.Color.fromARGB(255, 173, 32, 22),
+            fontSize: 12,
             fontWeight: FontWeight.bold,
+            shadows: [Shadow(offset: Offset(-2.0, 2.0),
+              blurRadius: 4.0,color: Colors.grey)]
           ),
         ),
       )
@@ -1359,17 +1558,25 @@ void _updateLeaveTime(TimeOfDay time)async{
     return Container(
       margin: const EdgeInsets.all(3.0),
       alignment: Alignment.center,
-      width: 38.0,
-      height: 38.0,
+      width: 45.0,
+      height: 45.0,
       decoration: BoxDecoration(
         color: cellColor,
         
         borderRadius:
-            BorderRadius.circular(100.0), // Unique radius for selected day
+            BorderRadius.circular(100.0),
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(context).shadowColor.withOpacity(0.3),
+                blurRadius: 6.0,
+                offset: Offset(0, 3),
+              ),
+              ], // Unique radius for selected day
       ),
       child: Text(
         date.day.toString(),
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: Colors.white ,fontSize: 26, fontWeight: FontWeight.bold,
+          ),
       ),
     );
   }
@@ -1400,20 +1607,15 @@ void _updateLeaveTime(TimeOfDay time)async{
         color: cellColor,
         borderRadius:
             BorderRadius.circular(100.0), 
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black38.withOpacity(0.3),
-                blurRadius: 6.0,
-                offset: Offset(0, 3),
-
-              ),
-              ],
+            
             // Full circular radius for today
       ),
       child: Text(
         date.day.toString(),
         style: const TextStyle(
-            color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+            color:Colors.white   ,fontSize: 11, fontWeight: FontWeight.bold,
+            shadows: [Shadow(offset: Offset(-2.0, 2.0),
+              blurRadius: 4.0,color: Colors.grey)]),
       ),
     ),
     Positioned(
@@ -1422,11 +1624,13 @@ void _updateLeaveTime(TimeOfDay time)async{
         color: Colors.transparent,
         alignment: Alignment.center,
         child: Text(
-          'Today',
+          'Today'.tr(),
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 10,
+            color: ui.Color.fromARGB(255, 173, 32, 22),
+            fontSize: 9,
             fontWeight: FontWeight.bold,
+            shadows: [Shadow(offset: Offset(-2.0, 2.0),
+              blurRadius: 4.0,color: Colors.grey)]
           ),
         ),
       )
@@ -1464,19 +1668,12 @@ void _updateLeaveTime(TimeOfDay time)async{
                 color: Colors.black45, width: 2.5) // Highlight selected day
             : null,
         borderRadius: BorderRadius.circular(100.0),
-        boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 6.0,
-                offset: Offset(0, 2)
-
-              ),
-              ],
+        
       ),
       child: Text(
         date.day.toString(),
         style:
-            const TextStyle(color: Colors.white,fontSize: 18, fontWeight: FontWeight.bold),
+            const TextStyle(color: Colors.white,fontSize: 18,),
       ),
     );
   }
@@ -1489,7 +1686,7 @@ void _updateLeaveTime(TimeOfDay time)async{
     Color gaugeColor;
     if (monthlyDelayMinutes <= 540) {
       // 0 - 9 hours
-      gaugeColor = Color(0xFF364fc7);
+      gaugeColor = Theme.of(context).hintColor;
     } else if (monthlyDelayMinutes <= 630) {
       // 9 - 10.5 hours
       gaugeColor = Color(0xFFFFD43B);
@@ -1568,7 +1765,7 @@ void _updateLeaveTime(TimeOfDay time)async{
     if (shift == 'day' || shift == 'Training Course') {
       return const Color(0xFFFFD43B);
     } else if (shift == 'night') {
-      return const Color(0xFF3B5BDB);
+      return Theme.of(context).hintColor;
     } else {
       return const Color.fromARGB(170, 158, 158, 158);
     }

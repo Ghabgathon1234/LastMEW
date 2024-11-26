@@ -3,13 +3,20 @@ import 'package:mew_shifts/local_notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'pages/setup_page.dart';
+import 'pages/setting_page.dart';
 import 'main_navigation.dart';
 import 'database_helper.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
+import 'theme.dart';
+import 'notifiers/theme_notifier.dart';
+import 'package:provider/provider.dart';
+import 'dart:ui' as ui;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final themeNotifier = ThemeNotifier(AppThemes.lightTheme);
+  await themeNotifier.loadTheme();
 
   await LocalNotificationService.init();
 
@@ -21,12 +28,14 @@ void main() async {
   await EasyLocalization.ensureInitialized();
 
   runApp(
+    
     EasyLocalization(
       supportedLocales: const [Locale('en', 'US'), Locale('ar', 'AR')],
       path: 'assets/translations', // Path to the translation files
       fallbackLocale: const Locale('en', 'US'),
-      child: const MyApp(),
-    ),
+      child:
+    ChangeNotifierProvider(create: (context) => themeNotifier,
+      child: const MyApp(),),),
   );
 }
 
@@ -69,18 +78,20 @@ class MyApp extends StatelessWidget {
   static void setLocale(BuildContext context, Locale newLocale) {
     EasyLocalization.of(context)!.setLocale(newLocale);
   }
+  
 
   @override
   Widget build(BuildContext context) {
+    final themeNotifier = Provider.of<ThemeNotifier>(context);
     return MaterialApp(
       title: 'Shift Manager',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: themeNotifier.currentTheme,
       home: const Initializer(),
       localizationsDelegates: context.localizationDelegates,
       supportedLocales: context.supportedLocales,
       locale: context.locale,
       routes: {
-        '/setup': (context) => const SetupPage(),
+        '/setup': (context) => const SettingPage(),
         '/main': (context) => const MainNavigation(),
       },
     );
@@ -131,18 +142,24 @@ class _InitializerState extends State<Initializer> {
     return showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Important Note').tr(),
+        return Directionality(textDirection: ui.TextDirection.rtl, 
+              child:
+        AlertDialog(
+          backgroundColor: Colors.white,
+          title: Text('تنبيه هام').tr(),
           content: Text('note_lunch').tr(),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
+                
               },
-              child: Text('OK').tr(),
+              style: TextButton.styleFrom(
+            foregroundColor: Color(0xFF007AFF)),
+              child: Text('حسناً').tr(),
             ),
           ],
-        );
+        ));
       },
     );
   }
@@ -155,6 +172,7 @@ class _InitializerState extends State<Initializer> {
           title: Text('Enable Notifications'),
           content:
               Text('Would you like to enable notifications to stay updated?'),
+              contentTextStyle: TextStyle(color: Colors.black54),
           actions: [
             TextButton(
               onPressed: () async {
@@ -162,12 +180,16 @@ class _InitializerState extends State<Initializer> {
                 await LocalNotificationService.requestPermission();
                 Navigator.of(context).pop();
               },
+              style: TextButton.styleFrom(
+            foregroundColor: Color(0xFF007AFF)),
               child: Text('Enable'),
             ),
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
               },
+              style: TextButton.styleFrom(
+            foregroundColor: Color(0xFF007AFF)),
               child: Text('Skip'),
             ),
           ],
@@ -183,7 +205,7 @@ class _InitializerState extends State<Initializer> {
         body: Center(child: CircularProgressIndicator()),
       );
     } else {
-      return _isFirstLaunch ? const SetupPage() : const MainNavigation();
+      return _isFirstLaunch ? const SettingPage() : const MainNavigation();
     }
   }
 }

@@ -116,5 +116,10 @@
   "Edit Attend Time":"تعديل وقت الحضور",
   "Edit Presence":"تعديل التواجد",
   "Edit Leave Time":"تعديل وقت الانصراف",
-  "Cancel":"إلغاء"
+  "Cancel":"إلغاء",
+  "Dark Mode":"الوضع الداكن",
+  "Today":"اليوم",
+  "Select Date Range":"حدد أيام الإجازة",
+  "Please select a valid date range!":"لم تقم بتحديد أيام للإجازة!",
+  "Delete Day Times":"مسح بيانات هذا اليوم"
 }

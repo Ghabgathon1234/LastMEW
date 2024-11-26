@@ -97,7 +97,7 @@
   "day": "day",
   "night": "night",
   "off": "off",
-  "note_lunch": "This application operates entirely offline and does not synchronize with the official timekeeping system at your work site.",
+  "note_lunch": "يعمل هذا التطبيق بشكل كامل دون اتصال بالإنترنت ولا يتزامن مع نظام الحضور الرسمي في موقع العمل.",
   "Important Note": "Important Note",
   "OK": "OK",
   "none": "none",
@@ -116,5 +116,10 @@
   "Edit Attend Time":"Edit Attend Time",
   "Edit Presence":"Edit Presence",
   "Edit Leave Time":"Edit Leave Time",
-  "Cancel":"Cancel"
+  "Cancel":"Cancel",
+  "Dark Mode":"Dark Mode",
+  "Today":"Today",
+  "Select Date Range":"Select Date Range",
+  "Please select a valid date range!":"Please select a valid date range!",
+  "Delete Day Times":"Delete Day's Data"
 }

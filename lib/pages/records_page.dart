@@ -55,12 +55,14 @@ class _RecordsPageState extends State<RecordsPage> {
       appBar: AppBar(
         title: Text(
           'Records'.tr(),
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
         ),
-        backgroundColor: const Color(0xFF3B5BDB),
+        backgroundColor: Theme.of(context).primaryColor ,
       ),
-      body: Padding(
+      body:
+      Padding(
         padding: const EdgeInsets.all(24.0),
+        
         child: _yearRecords.isEmpty
             ? Center(
                 child: Text(
@@ -98,6 +100,8 @@ class _RecordsPageState extends State<RecordsPage> {
   }) {
     return Card(
       elevation: 4,
+      color: Theme.of(context).cardColor,
+      shadowColor: Theme.of(context).shadowColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
@@ -112,7 +116,7 @@ class _RecordsPageState extends State<RecordsPage> {
               style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF3B5BDB)),
+                  color: Color(0xFF007AFF)),
             ),
             const SizedBox(height: 8),
             Text(

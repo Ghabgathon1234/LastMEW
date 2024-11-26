@@ -10,9 +10,9 @@ class AboutPage extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           'about'.tr(),
-          style: const TextStyle(color: Colors.white),
+          style:  TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
         ),
-        backgroundColor: const Color(0xFF3B5BDB),
+        backgroundColor: Theme.of(context).primaryColor,
       ),
       body: SingleChildScrollView(
         child: Padding(
@@ -25,13 +25,13 @@ class AboutPage extends StatelessWidget {
                 Text(
                   'about_description'.tr(),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Roboto',
                     fontSize: 16.0,
                     fontWeight: FontWeight.w500,
                     letterSpacing: 0.5,
                     height: 1.5,
-                    color: Color(0xff1d1b20),
+                    color: Theme.of(context).textTheme.bodyMedium?.color,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -44,13 +44,13 @@ class AboutPage extends StatelessWidget {
                 Text(
                   'about_contact'.tr(),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Roboto',
                     fontSize: 16.0,
                     fontWeight: FontWeight.w500,
                     letterSpacing: 0.5,
                     height: 1.5,
-                    color: Color(0xff1d1b20),
+                    color: Theme.of(context).textTheme.bodyMedium?.color,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -63,13 +63,13 @@ class AboutPage extends StatelessWidget {
                 Text(
                   'about_copyright'.tr(),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Roboto',
                     fontSize: 14.0,
                     fontWeight: FontWeight.w400,
                     letterSpacing: 0.3,
                     height: 1.4,
-                    color: Color(0xff1d1b20),
+                    color: Theme.of(context).textTheme.bodyMedium?.color,
                   ),
                 ),
               ],

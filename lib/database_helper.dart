@@ -184,6 +184,20 @@ class DatabaseHelper {
     return null; // Return null if no record is found
   }
 
+  Future<MonthRecord?> getMonthRecord(int year, int month) async{
+    final db = await database;
+    List<Map<String,dynamic>> maps = await db.query(
+      'month',
+      where: 'year = ? AND month = ?',
+      whereArgs: [year,month],
+    );
+
+    if (maps.isNotEmpty){
+      return MonthRecord.fromMap(maps.first);
+    }
+    return null;
+  }
+
   Future<List<Map<String, dynamic>>> getMonthRecordsForYear(int year) async {
     final db = await database;
 
